@@ -8,7 +8,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/coder/hnsw/heap"
+	"github.com/dont-use/hnsw/heap"
 	"golang.org/x/exp/maps"
 )
 
@@ -64,7 +64,7 @@ func (n *layerNode[K]) addNeighbor(newNode *layerNode[K], m int, dist DistanceFu
 	delete(n.neighbors, worst.Key)
 	// Delete backlink from the worst neighbor.
 	delete(worst.neighbors, n.Key)
-	worst.replenish(m)
+	worst.replenish(m, dist)
 }
 
 type searchCandidate[K cmp.Ordered] struct {
@@ -148,7 +148,7 @@ func (n *layerNode[K]) search(
 	return result.Slice()
 }
 
-func (n *layerNode[K]) replenish(m int) {
+func (n *layerNode[K]) replenish(m int, dist DistanceFunc) {
 	if len(n.neighbors) >= m {
 		return
 	}
@@ -165,23 +165,11 @@ func (n *layerNode[K]) replenish(m int) {
 			if candidate == n {
 				continue
 			}
-			n.addNeighbor(candidate, m, CosineDistance)
+			n.addNeighbor(candidate, m, dist)
 			if len(n.neighbors) >= m {
 				return
 			}
 		}
-	}
-}
-
-// isolates remove the node from the graph by removing all connections
-// to neighbors.
-func (n *layerNode[K]) isolate(m int) {
-	for _, neighbor := range n.neighbors {
-		delete(neighbor.neighbors, n.Key)
-	}
-
-	for _, neighbor := range n.neighbors {
-		neighbor.replenish(m)
 	}
 }
 
@@ -501,7 +489,26 @@ func (h *Graph[K]) Delete(key K) bool {
 		if len(layer.nodes) == 0 {
 			deleteLayer[i] = struct{}{}
 		}
-		node.isolate(h.M)
+
+		// Save the direct neighbors before clearing.
+		neighbors := node.neighbors
+		node.neighbors = nil
+
+		// Remove the deleted node from ALL nodes in this layer.
+		// This is necessary because addNeighbor eviction can create
+		// unidirectional edges (via replenish) that point to the
+		// deleted node from nodes outside its direct neighbor set.
+		// Without this, stale pointers cause nil dereferences when
+		// the deleted key is used as a search entry point.
+		for _, other := range layer.nodes {
+			delete(other.neighbors, key)
+		}
+
+		// Replenish the direct neighbors that lost a connection.
+		for _, neighbor := range neighbors {
+			neighbor.replenish(h.M, h.Distance)
+		}
+
 		deleted = true
 	}
 

@@ -1,4 +1,4 @@
-module github.com/coder/hnsw
+module github.com/dont-use/hnsw
 
 go 1.21.4
 

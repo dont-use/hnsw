@@ -151,10 +151,12 @@ func TestGraph_AddDelete(t *testing.T) {
 
 	postDeleteConnectivity := an.Connectivity()
 
-	// Connectivity should be the same for the lowest layer.
-	require.Equal(
-		t, preDeleteConnectivity[0],
-		postDeleteConnectivity[0],
+	// Connectivity may decrease after deletion since all references
+	// to deleted nodes are properly cleaned up (including unidirectional
+	// edges). It should remain well above half the original connectivity.
+	require.Greater(
+		t, postDeleteConnectivity[0],
+		preDeleteConnectivity[0]*0.5,
 	)
 
 	t.Run("DeleteNotFound", func(t *testing.T) {
@@ -247,6 +249,170 @@ func TestGraph_DefaultCosine(t *testing.T) {
 		},
 		neighbors,
 	)
+}
+
+// TestGraph_DeleteThenAdd_NoPanic reproduces a bug where Delete leaves stale
+// neighbor pointers in the graph, causing a nil pointer panic on subsequent Add.
+// See: https://github.com/heyajulia/aria/issues/31
+func TestGraph_DeleteThenAdd_NoPanic(t *testing.T) {
+	t.Parallel()
+
+	const dim = 16
+
+	for seed := int64(0); seed < 100; seed++ {
+		rng := rand.New(rand.NewSource(seed))
+		g := &Graph[int]{
+			M:        6,
+			Ml:       0.25,
+			Distance: CosineDistance,
+			EfSearch: 20,
+			Rng:      rand.New(rand.NewSource(seed)),
+		}
+
+		// Add initial nodes.
+		for i := 0; i < 100; i++ {
+			vec := make(Vector, dim)
+			for j := range vec {
+				vec[j] = rng.Float32()*2 - 1
+			}
+			g.Add(MakeNode(i, vec))
+		}
+
+		// Delete a batch of nodes — this can corrupt the graph.
+		for i := 0; i < 20; i++ {
+			g.Delete(i * 5)
+		}
+
+		// Adding new nodes must not panic due to stale neighbor pointers.
+		for i := 100; i < 200; i++ {
+			vec := make(Vector, dim)
+			for j := range vec {
+				vec[j] = rng.Float32()*2 - 1
+			}
+			g.Add(MakeNode(i, vec))
+		}
+	}
+}
+
+// TestGraph_DeleteIntegrity validates that after deletion, no node in the graph
+// has a neighbor pointer to a node that is not in the layer's node map.
+func TestGraph_DeleteIntegrity(t *testing.T) {
+	t.Parallel()
+
+	const dim = 16
+
+	for seed := int64(0); seed < 50; seed++ {
+		rng := rand.New(rand.NewSource(seed))
+		g := &Graph[int]{
+			M:        6,
+			Ml:       0.25,
+			Distance: CosineDistance,
+			EfSearch: 20,
+			Rng:      rand.New(rand.NewSource(seed)),
+		}
+
+		for i := 0; i < 100; i++ {
+			vec := make(Vector, dim)
+			for j := range vec {
+				vec[j] = rng.Float32()*2 - 1
+			}
+			g.Add(MakeNode(i, vec))
+		}
+
+		for i := 0; i < 20; i++ {
+			g.Delete(i * 5)
+		}
+
+		// Validate that no node references a deleted node.
+		for li, layer := range g.layers {
+			for key, node := range layer.nodes {
+				for nKey := range node.neighbors {
+					if _, ok := layer.nodes[nKey]; !ok {
+						t.Fatalf(
+							"seed %d: layer %d: node %v has neighbor %v which is not in the layer's node map (dangling pointer)",
+							seed, li, key, nKey,
+						)
+					}
+				}
+			}
+		}
+	}
+}
+
+// TestGraph_DeleteAddSearchCycle is a regression test that exercises
+// add-delete-add-search cycles. The original bug caused a nil pointer
+// panic when a deleted node's key was used as a search entry point
+// (elevator) because stale neighbor pointers survived deletion.
+func TestGraph_DeleteAddSearchCycle(t *testing.T) {
+	t.Parallel()
+
+	const dim = 8
+
+	for seed := int64(0); seed < 50; seed++ {
+		rng := rand.New(rand.NewSource(seed))
+		g := &Graph[int]{
+			M:        4,
+			Ml:       0.25,
+			Distance: EuclideanDistance,
+			EfSearch: 10,
+			Rng:      rand.New(rand.NewSource(seed)),
+		}
+
+		randVec := func() Vector {
+			v := make(Vector, dim)
+			for j := range v {
+				v[j] = rng.Float32()*2 - 1
+			}
+			return v
+		}
+
+		// Phase 1: populate
+		for i := 0; i < 50; i++ {
+			g.Add(MakeNode(i, randVec()))
+		}
+
+		// Phase 2: delete a batch
+		for i := 0; i < 50; i += 3 {
+			g.Delete(i)
+		}
+
+		// Phase 3: add more nodes
+		for i := 50; i < 100; i++ {
+			g.Add(MakeNode(i, randVec()))
+		}
+
+		// Phase 4: search must not panic
+		for i := 0; i < 10; i++ {
+			results := g.Search(randVec(), 5)
+			require.NotEmpty(t, results, "seed %d: search returned no results", seed)
+		}
+
+		// Phase 5: delete another batch
+		for i := 50; i < 100; i += 2 {
+			g.Delete(i)
+		}
+
+		// Phase 6: add and search again
+		for i := 100; i < 150; i++ {
+			g.Add(MakeNode(i, randVec()))
+		}
+		results := g.Search(randVec(), 3)
+		require.NotEmpty(t, results, "seed %d: final search returned no results", seed)
+
+		// Validate graph integrity after all operations.
+		for li, layer := range g.layers {
+			for key, node := range layer.nodes {
+				for nKey := range node.neighbors {
+					if _, ok := layer.nodes[nKey]; !ok {
+						t.Fatalf(
+							"seed %d: layer %d: node %v has dangling neighbor %v",
+							seed, li, key, nKey,
+						)
+					}
+				}
+			}
+		}
+	}
 }
 
 func TestGraph_RemoveAllNodes(t *testing.T) {

@@ -1,6 +1,6 @@
 # hnsw
-[![GoDoc](https://godoc.org/github.com/golang/gddo?status.svg)](https://pkg.go.dev/github.com/coder/hnsw@main?utm_source=godoc)
-![Go workflow status](https://github.com/coder/hnsw/actions/workflows/go.yaml/badge.svg)
+[![GoDoc](https://godoc.org/github.com/golang/gddo?status.svg)](https://pkg.go.dev/github.com/dont-use/hnsw@main?utm_source=godoc)
+![Go workflow status](https://github.com/dont-use/hnsw/actions/workflows/go.yaml/badge.svg)
 
 
 
@@ -28,7 +28,7 @@ operations:
 ## Usage
 
 ```
-go get github.com/coder/hnsw@main
+go get github.com/dont-use/hnsw@main
 ```
 
 ```go
@@ -83,9 +83,9 @@ if err != nil {
 ```
 
 See more:
-* [Export](https://pkg.go.dev/github.com/coder/hnsw#Graph.Export)
-* [Import](https://pkg.go.dev/github.com/coder/hnsw#Graph.Import)
-* [SavedGraph](https://pkg.go.dev/github.com/coder/hnsw#SavedGraph)
+* [Export](https://pkg.go.dev/github.com/dont-use/hnsw#Graph.Export)
+* [Import](https://pkg.go.dev/github.com/dont-use/hnsw#Graph.Import)
+* [SavedGraph](https://pkg.go.dev/github.com/dont-use/hnsw#SavedGraph)
 
 We use a fast binary encoding for the graph, so you can expect to save/load
 nearly at disk speed. On my M3 Macbook I get these benchmark results:
@@ -93,11 +93,11 @@ nearly at disk speed. On my M3 Macbook I get these benchmark results:
 ```
 goos: darwin
 goarch: arm64
-pkg: github.com/coder/hnsw
+pkg: github.com/dont-use/hnsw
 BenchmarkGraph_Import-16            4029            259927 ns/op         796.85 MB/s      496022 B/op       3212 allocs/op
 BenchmarkGraph_Export-16            7042            168028 ns/op        1232.49 MB/s      239886 B/op       2388 allocs/op
 PASS
-ok      github.com/coder/hnsw   2.624s
+ok      github.com/dont-use/hnsw   2.624s
 ```
 
 when saving/loading a graph of 100 vectors with 256 dimensions.
